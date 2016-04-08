@@ -31,6 +31,7 @@ type Logger interface {
 	Index() int64
 	LastIndex() int64
 	Term() int64
+	PrintAll() string
 }
 
 type Applyer interface {

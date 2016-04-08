@@ -2,6 +2,7 @@ package pontoon
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 )
@@ -91,4 +92,15 @@ func (l *Log) Append(e *Entry) error {
 	l.Entries = append(l.Entries, e)
 	l.index = e.Index + 1
 	return nil
+}
+
+func (l *Log) PrintAll() (resp string) {
+
+	for _, e := range l.Entries {
+
+		resp += fmt.Sprintf("ID: %d Data: %s\n", e.CmdID, string(e.Data))
+
+	}
+
+	return resp
 }

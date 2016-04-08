@@ -168,6 +168,11 @@ func (n *Node) ioLoop() {
 	electionTimer := time.NewTimer(n.randomElectionTimeout())
 	followerTimer := time.NewTicker(250 * time.Millisecond)
 	for {
+
+		// for i, e := range n.Cluster {
+		// 	log.Printf("[%s] Cluster #%d: %s", n.ID, i, e.ID)
+		// }
+
 		select {
 		case vreq := <-n.requestVoteChan:
 			vresp, _ := n.doRequestVote(vreq)

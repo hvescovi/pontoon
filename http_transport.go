@@ -53,10 +53,12 @@ func (t *HTTPTransport) String() string {
 	return t.listener.Addr().String()
 }
 
+var Debug string
+
 func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		apiResponse(w, 405, nil)
-	}
+	// if req.Method != "POST" {
+	// 	apiResponse(w, 405, "MUST USE HTTP POST")
+	// }
 
 	switch req.URL.Path {
 	case "/ping":
@@ -67,8 +69,57 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		t.appendEntriesHandler(w, req)
 	case "/command":
 		t.commandHandler(w, req)
+	case "/print":
+		fmt.Fprint(w, t.node.Log.PrintAll())
+	case "/cluster":
+		var str string
+		for _, peer := range t.node.Cluster {
+			str += peer.ID+" "
+		}
+		apiResponse(w, 299, str)
+
+	case "/node":
+		apiResponse(w, 299, strconv.Itoa(t.node.State))
+
+	case "/debug":
+		apiResponse(w, 299, Debug)
+
 	default:
-		apiResponse(w, 404, nil)
+
+		command := strings.Split(req.URL.Path, "/")
+
+		if command[1] == "test" && len(command) > 2 {
+
+			respChan := make(chan CommandResponse, 1)
+
+			id, _ := strconv.Atoi(command[2])
+
+			cr := CommandRequest{
+				ID:           int64(id),
+				Name:         "SUP",
+				Body:         []byte("BODY"),
+				ResponseChan: respChan,
+			}
+
+			t.node.Command(cr)
+
+			resp := <-respChan
+
+			if resp.Success {
+
+				fmt.Fprint(w, "Sucesso!")
+
+			} else {
+
+				fmt.Fprint(w, "Erro :(")
+
+			}
+
+			t.node.Log.PrintAll()
+
+		}
+
+		// apiResponse(w, 404, "COMMAND NOT FOUND: "+req.URL.Path)
 	}
 }
 
@@ -143,13 +194,13 @@ func (t *HTTPTransport) commandHandler(w http.ResponseWriter, req *http.Request)
 
 	data, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		apiResponse(w, 500, nil)
+		apiResponse(w, 500, "Sua requisicao esta vazia")
 		return
 	}
 
 	err = json.Unmarshal(data, &cr)
 	if err != nil {
-		apiResponse(w, 500, nil)
+		apiResponse(w, 500, "Unmarshall error")
 		return
 	}
 
@@ -157,7 +208,7 @@ func (t *HTTPTransport) commandHandler(w http.ResponseWriter, req *http.Request)
 	t.node.Command(cr)
 	resp := <-cr.ResponseChan
 	if !resp.Success {
-		apiResponse(w, 500, nil)
+		apiResponse(w, 500, "Comando nao foi bem sucedido")
 	}
 
 	apiResponse(w, 200, resp)
