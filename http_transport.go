@@ -237,20 +237,19 @@ func findLeader(node *Node) (ip string) {
 
 	ipchan := make(chan string)
 
-	for i, n := range node.Cluster {
+	for _, n := range node.Cluster {
 		go func(ip string) {
 			resp, err := http.Get(ip + PORT + "/node")
 			if err == nil {
 				defer resp.Body.Close()
 
 				body, err := ioutil.ReadAll(resp.Body)
-
 				if err == nil {
 					ss := string(body[:])
 
 					fmt.Println(ss)
 
-					if ss[1] == "1" {
+					if ss[1] == byte("2") {
 						ipchan <- ip
 					}
 				}
