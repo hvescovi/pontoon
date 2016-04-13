@@ -242,10 +242,17 @@ func findLeader(node *Node) (ip string) {
 			resp, err := http.Get(ip + PORT + "/node")
 			if err == nil {
 				defer resp.Body.Close()
+
 				body, err := ioutil.ReadAll(resp.Body)
-				fmt.Println(body)
-				if string(body)[1] == "1" {
-					ipchan <- ip
+
+				if err == nil {
+					ss := string(body)
+
+					fmt.Println(ss)
+
+					if ss[1] == "1" {
+						ipchan <- ip
+					}
 				}
 			}
 		}(n.ID)
