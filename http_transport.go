@@ -109,7 +109,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}
 		} else {
 
-			http.Redirect(w, req, findLeader(t.node)+req.URL.Path, 301)
+			http.Redirect(w, req, findLeaderIP(t.node)+req.URL.Path, 301)
 
 		}
 
@@ -233,7 +233,7 @@ func (t *HTTPTransport) AppendEntriesRPC(address string, entryRequest EntryReque
 	return EntryResponse{}, nil
 }
 
-func findLeader(node *Node) (ip string) {
+func findLeaderIP(node *Node) (ip string) {
 
 	ipchan := make(chan string)
 
@@ -249,7 +249,7 @@ func findLeader(node *Node) (ip string) {
 
 					fmt.Println(ss)
 
-					if ss[1] == byte("2") {
+					if ss[1] == byte('2') {
 						ipchan <- ip
 					}
 				}
