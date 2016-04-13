@@ -246,7 +246,7 @@ func findLeader(node *Node) (ip string) {
 				body, err := ioutil.ReadAll(resp.Body)
 
 				if err == nil {
-					ss := string(body)
+					ss := string(body[:])
 
 					fmt.Println(ss)
 
