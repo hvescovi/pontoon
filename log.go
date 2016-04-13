@@ -98,7 +98,7 @@ func (l *Log) PrintAll() (resp string) {
 
 	for _, e := range l.Entries {
 
-		resp += fmt.Sprintf("ID: %d Data: %s\n", e.CmdID, string(e.Data))
+		resp += fmt.Sprintf("Index: %d CmdID: %d Data: %s\n", e.CmdID, string(e.Data))
 
 	}
 

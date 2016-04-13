@@ -53,8 +53,6 @@ func (t *HTTPTransport) String() string {
 	return t.listener.Addr().String()
 }
 
-var Debug string
-
 func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// if req.Method != "POST" {
 	// 	apiResponse(w, 405, "MUST USE HTTP POST")
@@ -74,52 +72,47 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case "/cluster":
 		var str string
 		for _, peer := range t.node.Cluster {
-			str += peer.ID+" "
+			str += peer.ID + " "
 		}
 		apiResponse(w, 299, str)
 
 	case "/node":
 		apiResponse(w, 299, strconv.Itoa(t.node.State))
 
-	case "/debug":
-		apiResponse(w, 299, Debug)
-
 	default:
 
-		command := strings.Split(req.URL.Path, "/")
+		if t.node.State != Leader {
+			command := strings.Split(req.URL.Path, "/")
 
-		if command[1] == "test" && len(command) > 2 {
+			if command[1] == "test" && len(command) > 3 {
 
-			respChan := make(chan CommandResponse, 1)
+				respChan := make(chan CommandResponse, 1)
 
-			id, _ := strconv.Atoi(command[2])
+				id, _ := strconv.Atoi(command[2])
 
-			cr := CommandRequest{
-				ID:           int64(id),
-				Name:         "SUP",
-				Body:         []byte("BODY"),
-				ResponseChan: respChan,
+				body := []byte(command[3])
+
+				cr := CommandRequest{
+					ID:           int64(id),
+					Name:         "SUP",
+					Body:         body,
+					ResponseChan: respChan,
+				}
+
+				t.node.Command(cr)
+
+				if <-respChan {
+					apiResponse(w, 299, "Sucesso!")
+				} else {
+					apiResponse(w, 403, "Erro :(")
+				}
 			}
+		} else {
 
-			t.node.Command(cr)
-
-			resp := <-respChan
-
-			if resp.Success {
-
-				fmt.Fprint(w, "Sucesso!")
-
-			} else {
-
-				fmt.Fprint(w, "Erro :(")
-
-			}
-
-			t.node.Log.PrintAll()
+			http.Redirect(w, r, findLeader(t.node)+req.URL.Path, 301)
 
 		}
 
-		// apiResponse(w, 404, "COMMAND NOT FOUND: "+req.URL.Path)
 	}
 }
 
@@ -238,4 +231,25 @@ func (t *HTTPTransport) AppendEntriesRPC(address string, entryRequest EntryReque
 		return EntryResponse{}, err
 	}
 	return EntryResponse{}, nil
+}
+
+func findLeader(node Node) (ip string) {
+
+	ipchan := make(chan string)
+
+	for i, n := range node.Cluster {
+		go func(ip string) {
+			resp, err := http.Get(ip + PORT + "/node")
+			if err == nil {
+				defer resp.Close()
+				body, err := ioutil.ReadAll(resp.Body)
+				fmt.Println(body)
+				if body[1] == "1" {
+					ipchan <- ip
+				}
+			}
+		}(n.ID)
+	}
+
+	return <-ipchan
 }
