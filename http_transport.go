@@ -101,7 +101,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 				t.node.Command(cr)
 
-				if <-respChan {
+				if (<-respChan).Success {
 					apiResponse(w, 299, "Sucesso!")
 				} else {
 					apiResponse(w, 403, "Erro :(")
@@ -109,7 +109,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}
 		} else {
 
-			http.Redirect(w, r, findLeader(t.node)+req.URL.Path, 301)
+			http.Redirect(w, req, findLeader(t.node)+req.URL.Path, 301)
 
 		}
 
@@ -233,7 +233,7 @@ func (t *HTTPTransport) AppendEntriesRPC(address string, entryRequest EntryReque
 	return EntryResponse{}, nil
 }
 
-func findLeader(node Node) (ip string) {
+func findLeader(node *Node) (ip string) {
 
 	ipchan := make(chan string)
 
@@ -241,10 +241,10 @@ func findLeader(node Node) (ip string) {
 		go func(ip string) {
 			resp, err := http.Get(ip + PORT + "/node")
 			if err == nil {
-				defer resp.Close()
+				defer resp.Body.Close()
 				body, err := ioutil.ReadAll(resp.Body)
 				fmt.Println(body)
-				if body[1] == "1" {
+				if string(body)[1] == "1" {
 					ipchan <- ip
 				}
 			}
