@@ -14,8 +14,6 @@ const (
 	Committed
 )
 
-const PORT = ":55123"
-
 type Transporter interface {
 	Serve(node *Node) error
 	Close() error

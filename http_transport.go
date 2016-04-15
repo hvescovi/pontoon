@@ -68,29 +68,36 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case "/command":
 		t.commandHandler(w, req)
 	case "/print":
-		fmt.Fprint(w, t.node.Log.PrintAll())
+		// fmt.Fprint(w, t.node.Log.PrintAll())
+		apiResponse(w, 299, t.node.Log.PrintAll())
 	case "/cluster":
 		var str string
 		for _, peer := range t.node.Cluster {
-			str += peer.ID + " "
+			str += peer.ID + " " // + strconv.FormatInt(peer.NextIndex, 10) + " "
 		}
 		apiResponse(w, 299, str)
 
 	case "/node":
 		apiResponse(w, 299, strconv.Itoa(t.node.State))
 
+	case "/leader":
+		apiResponse(w, 299, findLeaderIP(t.node))
+
 	default:
 
-		if t.node.State != Leader {
-			command := strings.Split(req.URL.Path, "/")
+		fmt.Fprintln(w, req.URL.Path)
 
-			if command[1] == "test" && len(command) > 3 {
+		command := strings.Split(req.URL.Path[1:], "/")
 
+		fmt.Fprintln(w, command)
+
+		if command[0] == "command" {
+			if t.node.State == Leader {
 				respChan := make(chan CommandResponse, 1)
 
-				id, _ := strconv.Atoi(command[2])
+				id, _ := strconv.Atoi(command[1])
 
-				body := []byte(command[3])
+				body := []byte(command[2])
 
 				cr := CommandRequest{
 					ID:           int64(id),
@@ -104,13 +111,19 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				if (<-respChan).Success {
 					apiResponse(w, 299, "Sucesso!")
 				} else {
-					apiResponse(w, 403, "Erro :(")
+					apiResponse(w, 403, "Erro no request")
 				}
+
+			} else {
+				redIP := "http://" + findLeaderIP(t.node) + req.URL.Path
+
+				fmt.Fprintln(w, "redirecting to "+redIP)
+
+				http.Redirect(w, req, redIP, 301)
 			}
+
 		} else {
-
-			http.Redirect(w, req, findLeaderIP(t.node)+req.URL.Path, 301)
-
+			apiResponse(w, 403, "Erro no comando")
 		}
 
 	}
@@ -234,27 +247,103 @@ func (t *HTTPTransport) AppendEntriesRPC(address string, entryRequest EntryReque
 }
 
 func findLeaderIP(node *Node) (ip string) {
-	ipchan := make(chan string)
 
-	for _, n := range node.Cluster {
-		go func(ip string) {
-			resp, err := http.Get(ip + PORT + "/node")
-			if err == nil {
-				defer resp.Body.Close()
-
-				body, err := ioutil.ReadAll(resp.Body)
-				if err == nil {
-					ss := string(body[:])
-
-					fmt.Println(ss)
-
-					if ss[1] == byte('2') {
-						ipchan <- ip
-					}
-				}
-			}
-		}(n.ID)
+	if node.State == Leader {
+		return node.Transport.String()
 	}
 
-	return <-ipchan
+	ipchan := make(chan string)
+
+	for _, p := range node.Cluster {
+		fmt.Println(p.ID)
+		go func(ip string) {
+			fmt.Println(ip)
+			resp, err := http.Get("http://" + ip + "/node")
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return
+			}
+
+			ss := string(body[:])
+
+			fmt.Println(ss)
+
+			if ss != "" {
+
+				fmt.Println("resp not empty: " + ip)
+
+				if ss[1] == byte('2') {
+					// fmt.Println(ip + PORT)
+					ipchan <- ip
+				}
+			}
+
+		}(p.ID)
+	}
+
+	select {
+	case ipleader := <-ipchan:
+		return ipleader
+	case <-time.After(time.Second):
+		return "notFound"
+
+	}
+
 }
+
+// else {
+
+// 	for _, peer := range node.Cluster {
+
+// 		ip := peer.ID
+
+// 		go func(ip string) {
+
+// 			for _, port := range ValidPorts {
+
+// 				if port == myport && ip == node.tra {
+// 					continue
+// 				}
+
+// 				if find(ip+port, ipsAdded) {
+// 					continue
+// 				}
+
+// 				go func(ip string, port string, m *sync.Mutex) {
+// 					resp, err := http.Get("http://" + ip + port + "/ping")
+
+// 					if err != nil {
+// 						return
+// 					}
+
+// 					defer resp.Body.Close()
+
+// 					body, err := ioutil.ReadAll(resp.Body)
+
+// 					if err != nil {
+// 						return
+// 					}
+
+// 					ss := string(body[:])
+
+// 					fmt.Println(ss)
+
+// 					if ss != "" {
+// 						ipsAdded = append(ipsAdded, ip+port)
+// 						node.AddToCluster(ip + port)
+
+// 					}
+
+// 				}(ip, port)
+
+// 			}
+
+// 		}(remoteip)
+
+// 	}
+// }
