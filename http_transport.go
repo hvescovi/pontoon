@@ -234,7 +234,6 @@ func (t *HTTPTransport) AppendEntriesRPC(address string, entryRequest EntryReque
 }
 
 func findLeaderIP(node *Node) (ip string) {
-
 	ipchan := make(chan string)
 
 	for _, n := range node.Cluster {
