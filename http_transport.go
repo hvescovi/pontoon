@@ -1,6 +1,8 @@
 package pontoon
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,26 +56,26 @@ func (t *HTTPTransport) String() string {
 }
 
 func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// if req.Method != "POST" {
-	// 	apiResponse(w, 405, "MUST USE HTTP POST")
-	// }
-
 	switch req.URL.Path {
 	case "/ping":
 		t.pingHandler(w, req)
+
 	case "/request_vote":
 		t.requestVoteHandler(w, req)
+
 	case "/append_entries":
 		t.appendEntriesHandler(w, req)
+
 	case "/command":
 		t.commandHandler(w, req)
+
 	case "/print":
-		// fmt.Fprint(w, t.node.Log.PrintAll())
 		apiResponse(w, 299, t.node.Log.PrintAll())
+
 	case "/cluster":
 		var str string
 		for _, peer := range t.node.Cluster {
-			str += peer.ID + " " // + strconv.FormatInt(peer.NextIndex, 10) + " "
+			str += peer.ID + " "
 		}
 		apiResponse(w, 299, str)
 
@@ -83,15 +85,14 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case "/leader":
 		apiResponse(w, 299, findLeaderIP(t.node))
 
+	case "/hash":
+		hash := md5.Sum([]byte(t.node.Log.PrintAll()))
+		apiResponse(w, 299, hex.EncodeToString(hash[:]))
+
 	default:
-
-		fmt.Fprintln(w, req.URL.Path)
-
 		command := strings.Split(req.URL.Path[1:], "/")
 
-		fmt.Fprintln(w, command)
-
-		if command[0] == "command" {
+		if command[0] == "request" {
 			if t.node.State == Leader {
 				respChan := make(chan CommandResponse, 1)
 
@@ -109,7 +110,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				t.node.Command(cr)
 
 				if (<-respChan).Success {
-					apiResponse(w, 299, "Sucesso!")
+					apiResponse(w, 291, "Sucesso!")
 				} else {
 					apiResponse(w, 403, "Erro no request")
 				}
@@ -117,9 +118,27 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			} else {
 				redIP := "http://" + findLeaderIP(t.node) + req.URL.Path
 
-				fmt.Fprintln(w, "redirecting to "+redIP)
+				// alternativa 1: http.Redirect
+				// fmt.Fprintln(w, "redirecting to "+redIP)
 
-				http.Redirect(w, req, redIP, 301)
+				// http.Redirect(w, req, redIP, 301)
+
+				// alternativa 2:
+				resp, err := http.Get(redIP)
+
+				if err != nil {
+					apiResponse(w, 500, "Erro no redirect")
+				}
+
+				defer resp.Body.Close()
+
+				str, err := ioutil.ReadAll(resp.Body)
+
+				if err != nil {
+					apiResponse(w, 500, "Erro no parsing")
+				}
+
+				apiResponse(w, 290, str)
 			}
 
 		} else {
@@ -295,55 +314,3 @@ func findLeaderIP(node *Node) (ip string) {
 	}
 
 }
-
-// else {
-
-// 	for _, peer := range node.Cluster {
-
-// 		ip := peer.ID
-
-// 		go func(ip string) {
-
-// 			for _, port := range ValidPorts {
-
-// 				if port == myport && ip == node.tra {
-// 					continue
-// 				}
-
-// 				if find(ip+port, ipsAdded) {
-// 					continue
-// 				}
-
-// 				go func(ip string, port string, m *sync.Mutex) {
-// 					resp, err := http.Get("http://" + ip + port + "/ping")
-
-// 					if err != nil {
-// 						return
-// 					}
-
-// 					defer resp.Body.Close()
-
-// 					body, err := ioutil.ReadAll(resp.Body)
-
-// 					if err != nil {
-// 						return
-// 					}
-
-// 					ss := string(body[:])
-
-// 					fmt.Println(ss)
-
-// 					if ss != "" {
-// 						ipsAdded = append(ipsAdded, ip+port)
-// 						node.AddToCluster(ip + port)
-
-// 					}
-
-// 				}(ip, port)
-
-// 			}
-
-// 		}(remoteip)
-
-// 	}
-// }
