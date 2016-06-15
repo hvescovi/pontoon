@@ -8,8 +8,10 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,10 @@ type HTTPTransport struct {
 	Address  string
 	node     *Node
 	listener net.Listener
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }
 
 func (t *HTTPTransport) Serve(node *Node) error {
@@ -89,6 +95,25 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		hash := md5.Sum([]byte(t.node.Log.PrintAll()))
 		apiResponse(w, 299, hex.EncodeToString(hash[:]))
 
+	case "/number":
+		apiResponse(w, 299, t.node.Log.Length())
+
+	case "/die":
+		apiResponse(w, 299, "Exiting")
+		os.Exit(1)
+
+	case "/killleader":
+		http.Get("http://" + findLeaderIP(t.node) + "/die")
+		apiResponse(w, 299, "killleader sent")
+
+	case "/dieifnotleader":
+		if t.node.State == Leader {
+			apiResponse(w, 299, "I am the leader!")
+		} else {
+			apiResponse(w, 299, "Exiting")
+			os.Exit(1)
+		}
+
 	default:
 		command := strings.Split(req.URL.Path[1:], "/")
 
@@ -96,12 +121,23 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			if t.node.State == Leader {
 				respChan := make(chan CommandResponse, 1)
 
-				id, _ := strconv.Atoi(command[1])
+				var id int64
+				var body []byte
 
-				body := []byte(command[2])
+				if len(command) < 3 {
+					id = rand.Int63()
+					body = []byte("Hello")
+					// body = randomByteString(8)
+				} else {
+					id32, _ := strconv.Atoi(command[1])
+
+					id = int64(id32)
+
+					body = []byte(command[2])
+				}
 
 				cr := CommandRequest{
-					ID:           int64(id),
+					ID:           id,
 					Name:         "SUP",
 					Body:         body,
 					ResponseChan: respChan,
@@ -110,7 +146,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				t.node.Command(cr)
 
 				if (<-respChan).Success {
-					apiResponse(w, 291, "Sucesso!")
+					apiResponse(w, 200, "Sucesso!")
 				} else {
 					apiResponse(w, 403, "Erro no request")
 				}
@@ -118,27 +154,15 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			} else {
 				redIP := "http://" + findLeaderIP(t.node) + req.URL.Path
 
-				// alternativa 1: http.Redirect
-				// fmt.Fprintln(w, "redirecting to "+redIP)
-
-				// http.Redirect(w, req, redIP, 301)
-
-				// alternativa 2:
 				resp, err := http.Get(redIP)
 
 				if err != nil {
 					apiResponse(w, 500, "Erro no redirect")
 				}
 
-				defer resp.Body.Close()
+				resp.Body.Close()
 
-				str, err := ioutil.ReadAll(resp.Body)
-
-				if err != nil {
-					apiResponse(w, 500, "Erro no parsing")
-				}
-
-				apiResponse(w, 290, str)
+				apiResponse(w, resp.StatusCode, "Sucesso!")
 			}
 
 		} else {
@@ -293,11 +317,9 @@ func findLeaderIP(node *Node) (ip string) {
 			fmt.Println(ss)
 
 			if ss != "" {
-
 				fmt.Println("resp not empty: " + ip)
 
 				if ss[1] == byte('2') {
-					// fmt.Println(ip + PORT)
 					ipchan <- ip
 				}
 			}
@@ -313,4 +335,14 @@ func findLeaderIP(node *Node) (ip string) {
 
 	}
 
+}
+
+func randomByteString(size int) []byte {
+	b := make([]byte, size)
+
+	for i := range b {
+		b[i] = ASCII_CHARS[rand.Intn(len(ASCII_CHARS))]
+	}
+
+	return b
 }

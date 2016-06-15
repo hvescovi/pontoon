@@ -95,12 +95,13 @@ func (l *Log) Append(e *Entry) error {
 }
 
 func (l *Log) PrintAll() (resp string) {
-
 	for _, e := range l.Entries {
-
-		// resp += fmt.Sprintf("Index: %d CmdID: %d Data: %s\n", e.Index, e.CmdID, string(e.Data))
 		resp += fmt.Sprintf("(ID: %d Data: %s) ", e.CmdID, string(e.Data))
 	}
 
 	return resp
+}
+
+func (l *Log) Length() int {
+	return len(l.Entries)
 }
