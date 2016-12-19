@@ -1,7 +1,7 @@
 package pontoon
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -22,6 +22,10 @@ type HTTPTransport struct {
 	node     *Node
 	listener net.Listener
 }
+
+var leaderIP string
+
+const TIMEOUT = time.Duration(time.Second)
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -91,8 +95,11 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case "/leader":
 		apiResponse(w, 299, findLeaderIP(t.node))
 
+	case "/ip":
+		apiResponse(w, 299, t.Address)
+
 	case "/hash":
-		hash := md5.Sum([]byte(t.node.Log.PrintAll()))
+		hash := sha256.Sum256([]byte(t.node.Log.PrintAll()))
 		apiResponse(w, 299, hex.EncodeToString(hash[:]))
 
 	case "/number":
@@ -100,76 +107,112 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	case "/die":
 		apiResponse(w, 299, "Exiting")
-		os.Exit(1)
-
+		go func() {
+			time.Sleep(time.Second)
+			os.Exit(1)
+		}()
 	case "/killleader":
-		http.Get("http://" + findLeaderIP(t.node) + "/die")
-		apiResponse(w, 299, "killleader sent")
+		strcommand := findLeaderIP(t.node) + "/die"
+
+		fmt.Fprintln(w, strcommand)
+
+		http.Get(strcommand)
+
+		apiResponse(w, 299, "Killleader sent")
 
 	case "/dieifnotleader":
 		if t.node.State == Leader {
 			apiResponse(w, 299, "I am the leader!")
 		} else {
 			apiResponse(w, 299, "Exiting")
-			os.Exit(1)
+
+			go func() {
+				time.Sleep(time.Second)
+				os.Exit(1)
+			}()
+		}
+
+	case "/dieifleader":
+		if t.node.State != Leader {
+			apiResponse(w, 299, "I am not the leader!")
+		} else {
+			apiResponse(w, 299, "Exiting")
+
+			go func() {
+				time.Sleep(time.Second)
+				os.Exit(1)
+			}()
 		}
 
 	default:
 		command := strings.Split(req.URL.Path[1:], "/")
-
 		if command[0] == "request" {
-			if t.node.State == Leader {
-				respChan := make(chan CommandResponse, 1)
-
-				var id int64
-				var body []byte
-
-				if len(command) < 3 {
-					id = rand.Int63()
-					body = []byte("Hello")
-					// body = randomByteString(8)
-				} else {
-					id32, _ := strconv.Atoi(command[1])
-
-					id = int64(id32)
-
-					body = []byte(command[2])
-				}
-
-				cr := CommandRequest{
-					ID:           id,
-					Name:         "SUP",
-					Body:         body,
-					ResponseChan: respChan,
-				}
-
-				t.node.Command(cr)
-
-				if (<-respChan).Success {
-					apiResponse(w, 200, "Sucesso!")
-				} else {
-					apiResponse(w, 403, "Erro no request")
-				}
-
-			} else {
-				redIP := "http://" + findLeaderIP(t.node) + req.URL.Path
-
-				resp, err := http.Get(redIP)
-
-				if err != nil {
-					apiResponse(w, 500, "Erro no redirect")
-				}
-
-				resp.Body.Close()
-
-				apiResponse(w, resp.StatusCode, "Sucesso!")
-			}
-
+			handleRequest(command[1:], t.node, w)
 		} else {
 			apiResponse(w, 403, "Erro no comando")
 		}
-
 	}
+}
+
+func handleRequest(args []string, node *Node, w http.ResponseWriter) {
+	if node.State == Leader {
+		respChan := make(chan CommandResponse, 1)
+
+		var id int64
+		var body []byte
+
+		if len(args) < 2 {
+			id = rand.Int63()
+			body = randomByteString(PAYLOAD_SIZE)
+		} else {
+			id32, _ := strconv.Atoi(args[1])
+
+			id = int64(id32)
+
+			body = []byte(strings.Join(args[2:], "/"))
+		}
+
+		cr := CommandRequest{
+			ID:           id,
+			Name:         "SUP",
+			Body:         body,
+			ResponseChan: respChan,
+		}
+
+		node.Command(cr)
+
+		if (<-respChan).Success {
+			apiResponse(w, 200, "Sucesso!")
+		} else {
+			apiResponse(w, 403, "Erro no request")
+		}
+
+	} else {
+		statusCode := requestToLeader("request"+strings.Join(args, "/"), node, w)
+
+		apiResponse(w, statusCode, "Sucesso!")
+	}
+}
+
+func requestToLeader(command string, node *Node, w http.ResponseWriter) int {
+	client := http.Client{
+		Timeout: TIMEOUT,
+	}
+
+	leaderIP = findLeaderIP(node)
+
+	resp, err := client.Get("http://" + leaderIP + "/" + command)
+
+	if err != nil || resp.StatusCode != 200 {
+
+		fmt.Fprintf(w, "%v\n%v\n%v\n\n", err, resp, leaderIP+"/"+command)
+
+		return requestToLeader(command, node, w)
+	}
+
+	resp.Body.Close()
+
+	return resp.StatusCode
 }
 
 func apiResponse(w http.ResponseWriter, statusCode int, data interface{}) {
@@ -290,51 +333,58 @@ func (t *HTTPTransport) AppendEntriesRPC(address string, entryRequest EntryReque
 }
 
 func findLeaderIP(node *Node) (ip string) {
+	findLeader := func(node *Node) (ip string) {
+		ipchan := make(chan string)
+
+		for _, p := range node.Cluster {
+
+			fmt.Println(p.ID)
+
+			go func(ip string) {
+				resp, err := http.Get("http://" + ip + "/node")
+
+				if err != nil {
+					return
+				}
+
+				defer resp.Body.Close()
+
+				body, err := ioutil.ReadAll(resp.Body)
+
+				if err != nil {
+					return
+				}
+
+				ss := string(body[:])
+
+				fmt.Println(ss)
+
+				if ss != "" {
+					if ss[1] == byte('2') {
+						ipchan <- ip
+					}
+				}
+
+			}(p.ID)
+		}
+
+		select {
+		case ipleader := <-ipchan:
+			return ipleader
+		case <-time.After(time.Second):
+			return "notFound"
+		}
+	}
 
 	if node.State == Leader {
-		return node.Transport.String()
+		return node.Transport.(*HTTPTransport).Address
 	}
 
-	ipchan := make(chan string)
-
-	for _, p := range node.Cluster {
-		fmt.Println(p.ID)
-		go func(ip string) {
-			fmt.Println(ip)
-			resp, err := http.Get("http://" + ip + "/node")
-			if err != nil {
-				return
-			}
-			defer resp.Body.Close()
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				return
-			}
-
-			ss := string(body[:])
-
-			fmt.Println(ss)
-
-			if ss != "" {
-				fmt.Println("resp not empty: " + ip)
-
-				if ss[1] == byte('2') {
-					ipchan <- ip
-				}
-			}
-
-		}(p.ID)
+	if node.VotedFor == "" {
+		node.VotedFor = findLeader(node)
 	}
 
-	select {
-	case ipleader := <-ipchan:
-		return ipleader
-	case <-time.After(time.Second):
-		return "notFound"
-
-	}
-
+	return node.VotedFor
 }
 
 func randomByteString(size int) []byte {
