@@ -102,7 +102,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		hash := sha256.Sum256([]byte(t.node.Log.PrintAll()))
 		apiResponse(w, 299, hex.EncodeToString(hash[:]))
 
-	case "/number":
+	case "/len":
 		apiResponse(w, 299, t.node.Log.Length())
 
 	case "/die":
@@ -111,6 +111,7 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			time.Sleep(time.Second)
 			os.Exit(1)
 		}()
+
 	case "/killleader":
 		strcommand := findLeaderIP(t.node) + "/die"
 
@@ -184,7 +185,7 @@ func handleRequest(args []string, node *Node, w http.ResponseWriter) {
 		if (<-respChan).Success {
 			apiResponse(w, 200, "Sucesso!")
 		} else {
-			apiResponse(w, 403, "Erro no request")
+			apiResponse(w, 500, "Erro no request")
 		}
 
 	} else {
