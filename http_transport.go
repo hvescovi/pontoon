@@ -148,14 +148,14 @@ func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	default:
 		command := strings.Split(req.URL.Path[1:], "/")
 		if command[0] == "request" {
-			handleRequest(command[1:], t.node, w)
+			handleRequest(command[1:], t.node, w, req)
 		} else {
-			apiResponse(w, 403, "Erro no comando")
+			apiResponse(w, http.StatusBadRequest, "Erro no comando")
 		}
 	}
 }
 
-func handleRequest(args []string, node *Node, w http.ResponseWriter) {
+func handleRequest(args []string, node *Node, w http.ResponseWriter, r *http.Request) {
 	if node.State == Leader {
 		respChan := make(chan CommandResponse, 1)
 
@@ -189,9 +189,12 @@ func handleRequest(args []string, node *Node, w http.ResponseWriter) {
 		}
 
 	} else {
-		statusCode := requestToLeader("request"+strings.Join(args, "/"), node, w)
+		// statusCode := requestToLeader("request"+strings.Join(args, "/"), node, w)
+		// apiResponse(w, statusCode, "Sucesso!")
 
-		apiResponse(w, statusCode, "Sucesso!")
+		url := "http://" + findLeaderIP(node) + "/request" + strings.Join(args, "/")
+
+		http.Redirect(w, r, url, http.StatusMovedPermanently)
 	}
 }
 
