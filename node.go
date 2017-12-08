@@ -181,6 +181,7 @@ func (n *Node) ioLoop() {
 			eresp, _ := n.doAppendEntries(ereq)
 			n.appendEntriesResponseChan <- eresp
 		case creq := <-n.commandChan:
+			log.Printf("command received: ", creq)
 			n.doCommand(creq)
 			// optimize client response time by triggering a follower update immediately
 			n.updateFollowers()

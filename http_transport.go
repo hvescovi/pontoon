@@ -66,6 +66,11 @@ func (t *HTTPTransport) String() string {
 }
 
 func (t *HTTPTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	//fmt.Print("new command: ")
+	//fmt.Println(req.URL.Path)
+	log.Printf("new command: ")
+	log.Printf(req.URL.Path)
+	log.Printf("\n");
 	switch req.URL.Path {
 	case "/ping":
 		t.pingHandler(w, req)
